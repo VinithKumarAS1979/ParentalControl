@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ParentalControl.Common/ParentalControl.Common.csproj" />
+    <Project Path="src/ParentalControl.Service/ParentalControl.Service.csproj" />
+    <Project Path="src/ParentalControl.Viewer/ParentalControl.Viewer.csproj" />
+  </Folder>
+</Solution>
