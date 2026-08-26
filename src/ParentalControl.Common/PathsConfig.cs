@@ -12,6 +12,8 @@ public static class PathsConfig
 
     public static string BlocklistFile => Path.Combine(AppDataFolder, "blocklist.txt");
 
+    public static string AppBlocklistFile => Path.Combine(AppDataFolder, "app-blocklist.txt");
+
     public static string StateFile => Path.Combine(AppDataFolder, "scan-state.json");
 
     public static string LogFileForDate(DateTime date) =>

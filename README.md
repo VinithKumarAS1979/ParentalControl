@@ -24,8 +24,13 @@ A .NET 10 solution for basic parental-control website monitoring and blocking on
      new visits (adds page titles, which DNS-level logging can't provide) and appends them to
      `C:\temp\log-yyyy-MM-dd.txt`; also updates the Windows `hosts` file so full-domain block
      rules resolve to `127.0.0.1` as a second, redundant enforcement layer.
+  3. **Application block scan** (every 3 seconds) — enumerates running processes and terminates
+     any that match a rule in the app-blocklist, so blocked programs (games, launchers, etc.)
+     get killed shortly after they're started; each termination is appended to the same daily
+     log so it's visible in the Viewer.
 - **ParentalControl.Viewer** — Windows Forms app to browse the visited-sites log: pick a date,
   optionally filter by Windows account and/or free text (URL/title), and view matches in a grid.
+  Blocked-application terminations show up in the same grid (`Browser` column = `AppBlock`).
 
 ### DNS proxy limitations
 
@@ -56,6 +61,26 @@ The service only edits a clearly marked section of the hosts file:
 # === ParentalControl END ===
 ```
 so it never disturbs other entries, and can be safely removed by deleting that block.
+
+## How application blocking works
+
+App-blocklist entries live in:
+```
+C:\ProgramData\ParentalControl\app-blocklist.txt
+```
+One rule per line, `#` for comments. A rule can be:
+- An **executable name**, e.g. `steam.exe` — matches any running process with that name,
+  regardless of where it's installed.
+- A **path fragment**, e.g. `Riot Games\VALORANT` — matches any running process whose full
+  executable path contains that text (substring match), useful for targeting a specific install
+  without blocking every process with the same generic name.
+
+Every few seconds the service enumerates all running processes; anything matching a rule is
+force-terminated (including its child processes). Each termination is logged to the same daily
+visited-sites log (`C:\temp\log-yyyy-MM-dd.txt`), with `AppBlock` in the `Browser` column and the
+process's full path in the `URL` column, so blocked launch attempts show up in the Viewer
+alongside browsing history. As with the website blocklist, changes to the file are picked up
+automatically — no restart needed.
 
 ## How visit logging works
 
@@ -110,6 +135,11 @@ notepad C:\ProgramData\ParentalControl\blocklist.txt
 Add one rule per line — a full domain (`example.com`) or a partial fragment (`casino`). See
 [How blocking works](#how-blocking-works) for details. Changes are picked up on the next scan
 cycle (every minute) even while the service is already running.
+
+The service creates `C:\ProgramData\ParentalControl\app-blocklist.txt` the same way, for
+blocking applications. Add one rule per line — an executable name (`steam.exe`) or a path
+fragment (`Riot Games\VALORANT`). See [How application blocking works](#how-application-blocking-works)
+for details. Changes are picked up within a few seconds, even while the service is already running.
 
 ## 3. Run ParentalControl.Service
 

@@ -7,11 +7,13 @@ public class Worker(
     ILogger<Worker> logger,
     BrowserHistoryReader historyReader,
     BlocklistManager blocklistManager,
+    AppBlockManager appBlockManager,
     VisitLogWriter logWriter,
     DnsProxyServer dnsProxyServer,
     NetworkDnsConfigurator dnsConfigurator) : BackgroundService
 {
     private static readonly TimeSpan ScanInterval = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan AppBlockInterval = TimeSpan.FromSeconds(3);
     private List<NetworkDnsConfigurator.AdapterBackup> _dnsBackups = [];
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -31,8 +33,9 @@ public class Worker(
 
         var dnsTask = dnsProxyServer.RunAsync(stoppingToken);
         var historyTask = RunHistoryLoopAsync(state, stoppingToken);
+        var appBlockTask = RunAppBlockLoopAsync(stoppingToken);
 
-        await Task.WhenAll(dnsTask, historyTask);
+        await Task.WhenAll(dnsTask, historyTask, appBlockTask);
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
@@ -71,6 +74,30 @@ public class Worker(
         }
     }
 
+    private async Task RunAppBlockLoopAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                EnforceAppBlocklist();
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error during application-block cycle");
+            }
+
+            try
+            {
+                await Task.Delay(AppBlockInterval, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+    }
+
     private void ScanAndLogVisitedSites(ScanState state)
     {
         var profiles = historyReader.DiscoverProfiles();
@@ -99,6 +126,21 @@ public class Worker(
         catch (UnauthorizedAccessException ex)
         {
             logger.LogWarning(ex, "Unable to update hosts file - service must run with administrator privileges");
+        }
+    }
+
+    private void EnforceAppBlocklist()
+    {
+        var rules = appBlockManager.LoadRules();
+        if (rules.Count == 0) return;
+
+        var killed = appBlockManager.EnforceBlocklist(rules);
+        if (killed.Count == 0) return;
+
+        logWriter.AppendAppBlockEvents(killed);
+        foreach (var evt in killed)
+        {
+            logger.LogInformation("Blocked application {ProcessName} ({Path}) launched by {User}", evt.ProcessName, evt.Path, evt.WindowsUser);
         }
     }
 }
