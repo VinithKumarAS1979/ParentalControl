@@ -1,19 +1,24 @@
 using System.Management;
 using System.Runtime.Versioning;
+using System.Text;
 
 namespace ParentalControl.Common.Dns;
 
-/// <summary>Points active network adapters at the local DNS proxy (127.0.0.1) so every
-/// app's DNS lookups - not just specific browsers - are routed through it, and restores
-/// the adapters' original DNS settings afterwards.</summary>
+/// <summary>Reads the DNS configuration already present on each adapter so the service can
+/// log upstream resolvers and forwarders without changing network settings.</summary>
 [SupportedOSPlatform("windows")]
 public sealed class NetworkDnsConfigurator
 {
-    public sealed record AdapterBackup(string Description, string[] OriginalDnsServers);
+    public sealed record DnsTopologySnapshot(
+        string AdapterDescription,
+        bool DhcpEnabled,
+        string? DnsDomain,
+        string[] DnsServers,
+        string ResolverSource);
 
-    public List<AdapterBackup> ApplyLocalDns(string localDnsIp = "127.0.0.1")
+    public IReadOnlyList<DnsTopologySnapshot> CaptureCurrentTopology()
     {
-        var backups = new List<AdapterBackup>();
+        var snapshots = new List<DnsTopologySnapshot>();
 
         using var searcher = new ManagementObjectSearcher(
             "SELECT * FROM Win32_NetworkAdapterConfiguration WHERE IPEnabled = TRUE");
@@ -22,37 +27,36 @@ public sealed class NetworkDnsConfigurator
         foreach (var managementObject in results)
         {
             using var adapter = (ManagementObject)managementObject;
-            var current = (string[]?)adapter["DNSServerSearchOrder"] ?? [];
-            backups.Add(new AdapterBackup((string)adapter["Description"], current));
+            var dnsServers = (string[]?)adapter["DNSServerSearchOrder"] ?? [];
+            var dhcpEnabled = (bool?)adapter["DHCPEnabled"] ?? false;
+            var dnsDomain = adapter["DNSDomain"] as string;
+            var resolverSource = dnsServers.Length > 0
+                ? "adapter-configured"
+                : dhcpEnabled
+                    ? "dhcp-or-upstream"
+                    : "unspecified";
 
-            using var inParams = adapter.GetMethodParameters("SetDNSServerSearchOrder");
-            inParams["DNSServerSearchOrder"] = new[] { localDnsIp };
-            adapter.InvokeMethod("SetDNSServerSearchOrder", inParams, null);
+            snapshots.Add(new DnsTopologySnapshot(
+                AdapterDescription: adapter["Description"] as string ?? string.Empty,
+                DhcpEnabled: dhcpEnabled,
+                DnsDomain: dnsDomain,
+                DnsServers: dnsServers,
+                ResolverSource: resolverSource));
         }
 
-        return backups;
+        return snapshots;
     }
 
-    public void RestoreDns(IReadOnlyList<AdapterBackup> backups)
+    public void WriteSnapshotLog(DateTime capturedAtUtc, IReadOnlyList<DnsTopologySnapshot> snapshots)
     {
-        using var searcher = new ManagementObjectSearcher(
-            "SELECT * FROM Win32_NetworkAdapterConfiguration WHERE IPEnabled = TRUE");
-        using var results = searcher.Get();
-        var adapters = results.Cast<ManagementBaseObject>().Cast<ManagementObject>().ToList();
+        PathsConfig.EnsureFoldersExist();
+        var path = PathsConfig.DnsTopologyLogFileForDate(capturedAtUtc.Date);
+        var lines = snapshots.Select(snapshot =>
+            $"{capturedAtUtc:yyyy-MM-dd HH:mm:ss} UTC\t{snapshot.AdapterDescription}\t{snapshot.ResolverSource}\t{snapshot.DhcpEnabled}\t{snapshot.DnsDomain ?? string.Empty}\t{FormatServers(snapshot.DnsServers)}");
 
-        foreach (var backup in backups)
-        {
-            var adapter = adapters.FirstOrDefault(a => (string)a["Description"] == backup.Description);
-            if (adapter is null) continue;
-
-            using var inParams = adapter.GetMethodParameters("SetDNSServerSearchOrder");
-            inParams["DNSServerSearchOrder"] = backup.OriginalDnsServers.Length > 0 ? backup.OriginalDnsServers : null;
-            adapter.InvokeMethod("SetDNSServerSearchOrder", inParams, null);
-        }
-
-        foreach (var adapter in adapters)
-        {
-            adapter.Dispose();
-        }
+        File.AppendAllLines(path, lines);
     }
+
+    private static string FormatServers(IEnumerable<string> servers) =>
+        string.Join(",", servers.Where(server => !string.IsNullOrWhiteSpace(server)));
 }

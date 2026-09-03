@@ -1,6 +1,6 @@
 # ParentalControl
 
-A .NET 10 solution for basic parental-control website monitoring and blocking on Windows.
+A .NET 10 solution for browser history monitoring and passive DNS topology logging on Windows.
 
 > **Note on design:** This runs as a standard, disclosed background Windows Service (no visible
 > window while running — the same as any service, antivirus agent, or MDM tool). It intentionally
@@ -10,77 +10,30 @@ A .NET 10 solution for basic parental-control website monitoring and blocking on
 ## Projects
 
 - **ParentalControl.Common** — shared library: browser history reader (Chrome/Edge/Firefox SQLite
-  history), a local DNS proxy + network adapter configurator (covers every browser/app on the
-  machine), hosts-file blocklist enforcer, daily log writer, scan-state tracker.
+  history), passive DNS topology reader/logger, daily log writer, scan-state tracker.
 - **ParentalControl.Service** — Worker Service (`BackgroundService`) that runs two things
   concurrently:
-  1. **DNS proxy** (`DnsProxyServer`) — binds `127.0.0.1:53`. On startup, `NetworkDnsConfigurator`
-     points every active network adapter's DNS server at 127.0.0.1 (via WMI), so **every app on
-     the machine** — not just specific browsers, and including incognito/private windows — has
-     its DNS lookups pass through the proxy. Each lookup is logged; blocked domains get an
-     NXDOMAIN reply, everything else is forwarded to an upstream resolver (1.1.1.1) and relayed
-     back. Original adapter DNS settings are restored when the service stops.
+  1. **DNS topology snapshot** — reads the DNS servers already configured on each active network
+     adapter and appends them to `C:\temp\dns-topology-yyyy-MM-dd.txt`. This is passive logging:
+     it does not rewrite adapter DNS settings, start a proxy, or block web access.
   2. **Browser history scan** (every minute) — scans Chrome/Edge/Firefox history databases for
-     new visits (adds page titles, which DNS-level logging can't provide) and appends them to
-     `C:\temp\log-yyyy-MM-dd.txt`; also updates the Windows `hosts` file so full-domain block
-     rules resolve to `127.0.0.1` as a second, redundant enforcement layer.
-  3. **Application block scan** (every 3 seconds) — enumerates running processes and terminates
-     any that match a rule in the app-blocklist, so blocked programs (games, launchers, etc.)
-     get killed shortly after they're started; each termination is appended to the same daily
-     log so it's visible in the Viewer.
+     new visits (adds page titles) and appends them to `C:\temp\log-yyyy-MM-dd.txt`.
 - **ParentalControl.Viewer** — Windows Forms app to browse the visited-sites log: pick a date,
   optionally filter by Windows account and/or free text (URL/title), and view matches in a grid.
-  Blocked-application terminations show up in the same grid (`Browser` column = `AppBlock`).
 
-### DNS proxy limitations
+### DNS topology logging limitations
 
-- Browsers with **DNS-over-HTTPS ("Secure DNS")** enabled bypass the OS resolver entirely and
-  won't be seen by the local proxy — only hosts-file / history-scan blocking still applies to them.
-- Requires administrator privileges to bind port 53 and to change adapter DNS settings via WMI.
-- Only sees domain names, not full URLs/paths (that detail still comes from the history scan).
+- This records configured DNS servers / resolver hints from the adapter configuration; it does
+  not capture raw packets or DNS query payloads.
+- If an adapter is using DHCP-provided DNS, the resolver may be reported as `dhcp-or-upstream`
+  until the OS exposes explicit servers in the adapter configuration.
 
-## How blocking works
+## How logging works
 
-Blocklist entries live in:
-```
-C:\ProgramData\ParentalControl\blocklist.txt
-```
-One rule per line, `#` for comments. A rule can be:
-- A **full domain**, e.g. `example.com` — matches `example.com`, `www.example.com`, and any
-  subdomain. Enforced two ways: the DNS proxy returns NXDOMAIN for it, and it's also written to
-  the `hosts` file (redirected to `127.0.0.1`) as a redundant second layer.
-- A **partial fragment**, e.g. `casino` — matches any visited domain containing that text
-  (substring match). Enforced by the DNS proxy (NXDOMAIN for any queried domain containing the
-  fragment). It is **not** written to the `hosts` file, since that file only supports exact
-  domain entries — the DNS proxy is what makes fragment blocking work.
-
-The service only edits a clearly marked section of the hosts file:
-```
-# === ParentalControl BEGIN ===
-...
-# === ParentalControl END ===
-```
-so it never disturbs other entries, and can be safely removed by deleting that block.
-
-## How application blocking works
-
-App-blocklist entries live in:
-```
-C:\ProgramData\ParentalControl\app-blocklist.txt
-```
-One rule per line, `#` for comments. A rule can be:
-- An **executable name**, e.g. `steam.exe` — matches any running process with that name,
-  regardless of where it's installed.
-- A **path fragment**, e.g. `Riot Games\VALORANT` — matches any running process whose full
-  executable path contains that text (substring match), useful for targeting a specific install
-  without blocking every process with the same generic name.
-
-Every few seconds the service enumerates all running processes; anything matching a rule is
-force-terminated (including its child processes). Each termination is logged to the same daily
-visited-sites log (`C:\temp\log-yyyy-MM-dd.txt`), with `AppBlock` in the `Browser` column and the
-process's full path in the `URL` column, so blocked launch attempts show up in the Viewer
-alongside browsing history. As with the website blocklist, changes to the file are picked up
-automatically — no restart needed.
+The service never changes DNS settings, starts a local proxy, or edits the `hosts` file. It keeps
+web access intact and records only what it can observe passively:
+- Browser history from each user profile under `C:\Users`.
+- Existing DNS configuration / upstream resolver hints from each active network adapter.
 
 ## How visit logging works
 
@@ -100,17 +53,18 @@ Log format (tab-separated: time, Windows user, browser, URL, title), one file pe
 ```
 C:\temp\log-2026-08-24.txt
 2026-08-24 14:32:10 UTC	jsmith	Chrome	https://example.com/page	Example Page Title
-2026-08-24 14:32:11 UTC	(all users)	DNS	example.com	
 ```
-DNS-proxy entries can't be attributed to a specific Windows account (DNS queries carry no
-user/session information), so they're logged under `(all users)`.
+
+DNS topology snapshots are written separately to `C:\temp\dns-topology-2026-08-24.txt` and
+record the adapter description, resolver source, DHCP flag, DNS domain, and configured server
+list.
 
 ## Prerequisites
 
 - Windows 10/11.
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
-- An elevated (Run as Administrator) PowerShell/terminal for anything that touches the `hosts`
-  file, port 53, or adapter DNS settings — i.e. the service, in any mode.
+- An elevated (Run as Administrator) PowerShell/terminal if you want the service to read browser
+  profiles from other Windows users or install it as `LocalSystem`.
 
 ## 1. Clone and build the solution
 
@@ -122,42 +76,29 @@ dotnet build
 This restores NuGet packages and builds all three projects (`ParentalControl.Common`,
 `ParentalControl.Service`, `ParentalControl.Viewer`).
 
-## 2. Configure the blocklist (optional, before first run)
+## 2. Configure the log locations (optional)
 
-The service creates `C:\ProgramData\ParentalControl\blocklist.txt` automatically the first time
-it runs, with a comment header and no rules. You can create/edit it yourself first if you want
-rules in place immediately:
+The service writes browser history logs and DNS topology snapshots to `C:\temp`. Create the
+folder in advance if you want to verify permissions before starting the service:
 
 ```powershell
-New-Item -ItemType Directory -Force -Path C:\ProgramData\ParentalControl | Out-Null
-notepad C:\ProgramData\ParentalControl\blocklist.txt
+New-Item -ItemType Directory -Force -Path C:\temp | Out-Null
 ```
-Add one rule per line — a full domain (`example.com`) or a partial fragment (`casino`). See
-[How blocking works](#how-blocking-works) for details. Changes are picked up on the next scan
-cycle (every minute) even while the service is already running.
-
-The service creates `C:\ProgramData\ParentalControl\app-blocklist.txt` the same way, for
-blocking applications. Add one rule per line — an executable name (`steam.exe`) or a path
-fragment (`Riot Games\VALORANT`). See [How application blocking works](#how-application-blocking-works)
-for details. Changes are picked up within a few seconds, even while the service is already running.
 
 ## 3. Run ParentalControl.Service
 
-The service must run elevated because it edits the `hosts` file, binds port 53 for the DNS
-proxy, and changes network adapter DNS settings via WMI. Choose one of the two modes below.
+The service can run without special network permissions because it does not edit DNS settings,
+bind ports, or modify the `hosts` file. Choose one of the two modes below.
 
 ### Option A — Console mode (quick manual testing, no installation)
 
-Open an **elevated** PowerShell and run:
+Open a PowerShell and run:
 ```powershell
 cd ParentalControl
 dotnet run --project src/ParentalControl.Service
 ```
-It runs in the foreground and logs to the console. Press `Ctrl+C` to stop it — this also
-restores the original DNS adapter settings before exiting. Useful for verifying behavior before
-installing it as a real service, but it stops when the terminal closes and only has permission
-to read the current user's browser profiles (plus any others, if run as an admin account with
-access to them).
+It runs in the foreground and logs to the console. Press `Ctrl+C` to stop it. Useful for
+verifying behavior before installing it as a real service.
 
 ### Option B — Install as a Windows Service (persists across logoff/reboot)
 
@@ -169,8 +110,8 @@ sc.exe start ParentalControlService
 ```
 Replace the `binPath=` value with the actual full path to the published `.exe` (note the
 required space after `binPath=` and `start=` — that's `sc.exe` syntax, not a typo). Installed
-this way it runs as `LocalSystem`, which is why it can read every Windows user's browser
-profiles and modify the `hosts` file / DNS settings.
+this way it runs as `LocalSystem`, which is the easiest way to read every Windows user's browser
+profiles.
 
 To check status, stop, or remove it later:
 ```powershell

@@ -6,47 +6,19 @@ namespace ParentalControl.Service;
 public class Worker(
     ILogger<Worker> logger,
     BrowserHistoryReader historyReader,
-    BlocklistManager blocklistManager,
-    AppBlockManager appBlockManager,
     VisitLogWriter logWriter,
-    DnsProxyServer dnsProxyServer,
     NetworkDnsConfigurator dnsConfigurator) : BackgroundService
 {
     private static readonly TimeSpan ScanInterval = TimeSpan.FromMinutes(1);
-    private static readonly TimeSpan AppBlockInterval = TimeSpan.FromSeconds(3);
-    private List<NetworkDnsConfigurator.AdapterBackup> _dnsBackups = [];
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         PathsConfig.EnsureFoldersExist();
         var state = ScanState.Load();
-
-        try
-        {
-            _dnsBackups = dnsConfigurator.ApplyLocalDns();
-            logger.LogInformation("Redirected {Count} network adapter(s) to the local DNS proxy", _dnsBackups.Count);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Unable to redirect system DNS to the local proxy - service must run with administrator privileges");
-        }
-
-        var dnsTask = dnsProxyServer.RunAsync(stoppingToken);
         var historyTask = RunHistoryLoopAsync(state, stoppingToken);
-        var appBlockTask = RunAppBlockLoopAsync(stoppingToken);
+        var dnsTopologyTask = RunDnsTopologyLoopAsync(stoppingToken);
 
-        await Task.WhenAll(dnsTask, historyTask, appBlockTask);
-    }
-
-    public override async Task StopAsync(CancellationToken cancellationToken)
-    {
-        if (_dnsBackups.Count > 0)
-        {
-            dnsConfigurator.RestoreDns(_dnsBackups);
-            logger.LogInformation("Restored original DNS settings for {Count} network adapter(s)", _dnsBackups.Count);
-        }
-
-        await base.StopAsync(cancellationToken);
+        await Task.WhenAll(historyTask, dnsTopologyTask);
     }
 
     private async Task RunHistoryLoopAsync(ScanState state, CancellationToken stoppingToken)
@@ -56,7 +28,6 @@ public class Worker(
             try
             {
                 ScanAndLogVisitedSites(state);
-                EnforceBlocklist();
             }
             catch (Exception ex)
             {
@@ -74,22 +45,24 @@ public class Worker(
         }
     }
 
-    private async Task RunAppBlockLoopAsync(CancellationToken stoppingToken)
+    private async Task RunDnsTopologyLoopAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                EnforceAppBlocklist();
+                var snapshots = dnsConfigurator.CaptureCurrentTopology();
+                dnsConfigurator.WriteSnapshotLog(DateTime.UtcNow, snapshots);
+                logger.LogInformation("Captured DNS topology for {Count} adapter(s)", snapshots.Count);
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error during application-block cycle");
+                logger.LogError(ex, "Error while capturing DNS topology");
             }
 
             try
             {
-                await Task.Delay(AppBlockInterval, stoppingToken);
+                await Task.Delay(ScanInterval, stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -112,36 +85,6 @@ public class Worker(
             logger.LogInformation("Logged {Count} new visits from {User}'s {Browser}", newEntries.Count, windowsUser, browser);
         }
         state.Save();
-    }
-
-    private void EnforceBlocklist()
-    {
-        var rules = blocklistManager.LoadRules();
-        if (rules.Count == 0) return;
-
-        try
-        {
-            blocklistManager.ApplyHostsFileBlocks(rules);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            logger.LogWarning(ex, "Unable to update hosts file - service must run with administrator privileges");
-        }
-    }
-
-    private void EnforceAppBlocklist()
-    {
-        var rules = appBlockManager.LoadRules();
-        if (rules.Count == 0) return;
-
-        var killed = appBlockManager.EnforceBlocklist(rules);
-        if (killed.Count == 0) return;
-
-        logWriter.AppendAppBlockEvents(killed);
-        foreach (var evt in killed)
-        {
-            logger.LogInformation("Blocked application {ProcessName} ({Path}) launched by {User}", evt.ProcessName, evt.Path, evt.WindowsUser);
-        }
     }
 }
 

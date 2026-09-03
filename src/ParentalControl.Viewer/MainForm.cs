@@ -3,72 +3,106 @@ using ParentalControl.Common;
 
 namespace ParentalControl.Viewer;
 
-/// <summary>Lets a parent/administrator browse the daily visited-sites log, filtered by date,
-/// Windows account, and free text (URL/title).</summary>
+/// <summary>Lets a parent/administrator browse browser history and DNS topology snapshots by date.</summary>
 public sealed class MainForm : Form
 {
     private readonly DateTimePicker _datePicker;
     private readonly TextBox _userFilterBox;
     private readonly TextBox _textFilterBox;
     private readonly Button _loadButton;
-    private readonly DataGridView _grid;
+    private readonly DataGridView _historyGrid;
+    private readonly DataGridView _dnsGrid;
     private readonly Label _statusLabel;
+    private readonly TabPage _historyTab;
+    private readonly TabPage _dnsTab;
 
     public MainForm()
     {
-        Text = "Parental Control - Visited Websites Viewer";
-        Width = 1000;
-        Height = 600;
+        Text = "Parental Control - Viewer";
+        Width = 1200;
+        Height = 750;
         StartPosition = FormStartPosition.CenterScreen;
 
         var topPanel = new FlowLayoutPanel
         {
             Dock = DockStyle.Top,
-            Height = 40,
+            Height = 44,
             Padding = new Padding(8),
+            WrapContents = false,
+            AutoSize = false,
         };
 
         _datePicker = new DateTimePicker { Format = DateTimePickerFormat.Short, Width = 110 };
-        _userFilterBox = new TextBox { Width = 140, PlaceholderText = "Windows user filter" };
-        _textFilterBox = new TextBox { Width = 200, PlaceholderText = "URL/title filter" };
+        _userFilterBox = new TextBox { Width = 160, PlaceholderText = "Windows user filter" };
+        _textFilterBox = new TextBox { Width = 240, PlaceholderText = "URL/title filter" };
         _loadButton = new Button { Text = "Load", AutoSize = true };
-        _loadButton.Click += (_, _) => LoadLog();
+        _loadButton.Click += (_, _) => LoadLogs();
 
-        topPanel.Controls.Add(new Label { Text = "Date:", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(0, 6, 4, 0) });
+        topPanel.Controls.Add(new Label { Text = "Date:", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(0, 7, 4, 0) });
         topPanel.Controls.Add(_datePicker);
-        topPanel.Controls.Add(new Label { Text = "User:", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(8, 6, 4, 0) });
+        topPanel.Controls.Add(new Label { Text = "User:", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(8, 7, 4, 0) });
         topPanel.Controls.Add(_userFilterBox);
-        topPanel.Controls.Add(new Label { Text = "Filter:", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(8, 6, 4, 0) });
+        topPanel.Controls.Add(new Label { Text = "Filter:", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(8, 7, 4, 0) });
         topPanel.Controls.Add(_textFilterBox);
         topPanel.Controls.Add(_loadButton);
 
-        _grid = new DataGridView
-        {
-            Dock = DockStyle.Fill,
-            ReadOnly = true,
-            AllowUserToAddRows = false,
-            AllowUserToDeleteRows = false,
-            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-        };
+        _historyGrid = CreateGrid();
+        _dnsGrid = CreateGrid();
 
-        _statusLabel = new Label { Dock = DockStyle.Bottom, Height = 24, Padding = new Padding(8, 4, 0, 0) };
+        var tabs = new TabControl { Dock = DockStyle.Fill };
+        _historyTab = new TabPage("Browser History");
+        _dnsTab = new TabPage("DNS Topology");
+        _historyTab.Controls.Add(_historyGrid);
+        _dnsTab.Controls.Add(_dnsGrid);
+        tabs.TabPages.Add(_historyTab);
+        tabs.TabPages.Add(_dnsTab);
 
-        Controls.Add(_grid);
+        _statusLabel = new Label { Dock = DockStyle.Bottom, Height = 26, Padding = new Padding(8, 4, 0, 0) };
+
+        Controls.Add(tabs);
         Controls.Add(_statusLabel);
         Controls.Add(topPanel);
 
         Load += (_, _) =>
         {
             _datePicker.Value = DateTime.UtcNow.Date;
-            LoadLog();
+            LoadLogs();
         };
     }
 
-    private void LoadLog()
+    private static DataGridView CreateGrid() => new()
+    {
+        Dock = DockStyle.Fill,
+        ReadOnly = true,
+        AllowUserToAddRows = false,
+        AllowUserToDeleteRows = false,
+        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+        SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+        MultiSelect = false,
+    };
+
+    private void LoadLogs()
     {
         var date = _datePicker.Value.Date;
-        var path = PathsConfig.LogFileForDate(date);
+        var userFilter = _userFilterBox.Text.Trim();
+        var textFilter = _textFilterBox.Text.Trim();
+
+        var historyResult = LoadHistoryLog(date, userFilter, textFilter);
+        var dnsResult = LoadDnsTopologyLog(date, textFilter);
+
+        _historyGrid.DataSource = historyResult.Table;
+        _dnsGrid.DataSource = dnsResult.Table;
+
+        _historyTab.Text = $"Browser History ({historyResult.MatchedCount})";
+        _dnsTab.Text = $"DNS Topology ({dnsResult.MatchedCount})";
+
+        _statusLabel.Text =
+            $"{historyResult.MatchedCount} browser entr{(historyResult.MatchedCount == 1 ? "y" : "ies")}, " +
+            $"{dnsResult.MatchedCount} DNS entr{(dnsResult.MatchedCount == 1 ? "y" : "ies")} for {date:yyyy-MM-dd}";
+    }
+
+    private static (DataTable Table, int MatchedCount) LoadHistoryLog(DateTime date, string userFilter, string textFilter)
+    {
         var table = new DataTable();
         table.Columns.Add("Time (UTC)");
         table.Columns.Add("User");
@@ -76,17 +110,13 @@ public sealed class MainForm : Form
         table.Columns.Add("URL");
         table.Columns.Add("Title");
 
+        var path = PathsConfig.LogFileForDate(date);
         if (!File.Exists(path))
         {
-            _grid.DataSource = table;
-            _statusLabel.Text = $"No log file found for {date:yyyy-MM-dd} at {path}";
-            return;
+            return (table, 0);
         }
 
-        var userFilter = _userFilterBox.Text.Trim();
-        var textFilter = _textFilterBox.Text.Trim();
         var matched = 0;
-
         foreach (var line in File.ReadLines(path))
         {
             var parts = line.Split('\t');
@@ -98,6 +128,7 @@ public sealed class MainForm : Form
             {
                 continue;
             }
+
             if (!string.IsNullOrEmpty(textFilter) &&
                 !url.Contains(textFilter, StringComparison.OrdinalIgnoreCase) &&
                 !title.Contains(textFilter, StringComparison.OrdinalIgnoreCase))
@@ -109,7 +140,46 @@ public sealed class MainForm : Form
             matched++;
         }
 
-        _grid.DataSource = table;
-        _statusLabel.Text = $"{matched} entr{(matched == 1 ? "y" : "ies")} for {date:yyyy-MM-dd}";
+        return (table, matched);
+    }
+
+    private static (DataTable Table, int MatchedCount) LoadDnsTopologyLog(DateTime date, string textFilter)
+    {
+        var table = new DataTable();
+        table.Columns.Add("Time (UTC)");
+        table.Columns.Add("Adapter");
+        table.Columns.Add("Source");
+        table.Columns.Add("DHCP");
+        table.Columns.Add("DNS Domain");
+        table.Columns.Add("DNS Servers");
+
+        var path = PathsConfig.DnsTopologyLogFileForDate(date);
+        if (!File.Exists(path))
+        {
+            return (table, 0);
+        }
+
+        var matched = 0;
+        foreach (var line in File.ReadLines(path))
+        {
+            var parts = line.Split('\t');
+            if (parts.Length < 6) continue;
+
+            var (time, adapter, source, dhcp, dnsDomain, dnsServers) = (parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]);
+
+            if (!string.IsNullOrEmpty(textFilter) &&
+                !adapter.Contains(textFilter, StringComparison.OrdinalIgnoreCase) &&
+                !source.Contains(textFilter, StringComparison.OrdinalIgnoreCase) &&
+                !dnsDomain.Contains(textFilter, StringComparison.OrdinalIgnoreCase) &&
+                !dnsServers.Contains(textFilter, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            table.Rows.Add(time, adapter, source, dhcp, dnsDomain, dnsServers);
+            matched++;
+        }
+
+        return (table, matched);
     }
 }

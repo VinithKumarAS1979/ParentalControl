@@ -21,13 +21,4 @@ public sealed class VisitLogWriter
             }
         }
     }
-
-    /// <summary>Logs terminated (blocked) application launches alongside visited-site entries,
-    /// so they show up in the same daily log and viewer.</summary>
-    public void AppendAppBlockEvents(IEnumerable<AppBlockEvent> events)
-    {
-        var nowUtc = DateTime.UtcNow;
-        var entries = events.Select(e => new VisitedSiteEntry(e.WindowsUser, "AppBlock", e.Path, "Blocked - terminated", nowUtc));
-        Append(entries);
-    }
 }

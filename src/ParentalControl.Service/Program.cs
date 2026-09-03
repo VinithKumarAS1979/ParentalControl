@@ -5,10 +5,7 @@ using ParentalControl.Service;
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddWindowsService(options => options.ServiceName = "ParentalControlService");
 builder.Services.AddSingleton<BrowserHistoryReader>();
-builder.Services.AddSingleton<BlocklistManager>();
-builder.Services.AddSingleton<AppBlockManager>();
 builder.Services.AddSingleton<VisitLogWriter>();
-builder.Services.AddSingleton<DnsProxyServer>();
 builder.Services.AddSingleton<NetworkDnsConfigurator>();
 builder.Services.AddHostedService<Worker>();
 
