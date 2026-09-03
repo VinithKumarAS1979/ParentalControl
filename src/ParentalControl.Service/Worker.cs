@@ -1,5 +1,4 @@
 using ParentalControl.Common;
-using ParentalControl.Common.Dns;
 
 namespace ParentalControl.Service;
 
@@ -8,7 +7,6 @@ public class Worker(
     BrowserHistoryReader historyReader,
     BlocklistManager blocklistManager,
     VisitLogWriter logWriter,
-    NetworkDnsConfigurator dnsConfigurator,
     BlockPageServer blockPageServer,
     BlocklistApiServer blocklistApiServer) : BackgroundService
 {
@@ -19,11 +17,10 @@ public class Worker(
         PathsConfig.EnsureFoldersExist();
         var state = ScanState.Load();
         var historyTask = RunHistoryLoopAsync(state, stoppingToken);
-        var dnsTopologyTask = RunDnsTopologyLoopAsync(stoppingToken);
         var blockPageTask = RunBlockPageLoopAsync(stoppingToken);
         var blocklistApiTask = blocklistApiServer.RunAsync(stoppingToken);
 
-        await Task.WhenAll(historyTask, dnsTopologyTask, blockPageTask, blocklistApiTask);
+        await Task.WhenAll(historyTask, blockPageTask, blocklistApiTask);
     }
 
     private async Task RunHistoryLoopAsync(ScanState state, CancellationToken stoppingToken)
@@ -37,32 +34,6 @@ public class Worker(
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error during monitoring cycle");
-            }
-
-            try
-            {
-                await Task.Delay(ScanInterval, stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-        }
-    }
-
-    private async Task RunDnsTopologyLoopAsync(CancellationToken stoppingToken)
-    {
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                var snapshots = dnsConfigurator.CaptureCurrentTopology();
-                dnsConfigurator.WriteSnapshotLog(DateTime.UtcNow, snapshots);
-                logger.LogInformation("Captured DNS topology for {Count} adapter(s)", snapshots.Count);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Error while capturing DNS topology");
             }
 
             try

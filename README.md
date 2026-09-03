@@ -1,6 +1,6 @@
 # ParentalControl
 
-A .NET 10 solution for browser history monitoring, DNS topology logging, and browser-visible website blocking on Windows.
+A .NET 10 solution for browser history monitoring and browser-visible website blocking on Windows.
 
 > **Note on design:** This runs as a standard, disclosed background Windows Service (no visible
 > window while running — the same as any service, antivirus agent, or MDM tool). It intentionally
@@ -10,15 +10,13 @@ A .NET 10 solution for browser history monitoring, DNS topology logging, and bro
 ## Projects
 
 - **ParentalControl.Common** — shared library: browser history reader (Chrome/Edge/Firefox SQLite
-  history), DNS topology reader/logger, blocklist manager, daily log writer, scan-state tracker,
-  local block-page certificate store.
-- **ParentalControl.Service** — Worker Service (`BackgroundService`) that runs three things
+  history), blocklist manager, daily log writer, scan-state tracker, local block-page certificate
+  store.
+- **ParentalControl.Service** — Worker Service (`BackgroundService`) that runs two things
   concurrently:
-  1. **DNS topology snapshot** — reads the DNS servers already configured on each active network
-    adapter and appends them to `C:\temp\dns-topology-yyyy-MM-dd.txt`.
-  2. **Browser history scan** (every minute) — scans Chrome/Edge/Firefox history databases for
+  1. **Browser history scan** (every minute) — scans Chrome/Edge/Firefox history databases for
     new visits (adds page titles) and appends them to `C:\temp\log-yyyy-MM-dd.txt`.
-  3. **Website blocking** — applies blocklist domains to the Windows `hosts` file and serves a
+  2. **Website blocking** — applies blocklist domains to the Windows `hosts` file and serves a
     local block page over HTTP/HTTPS so blocked sites show a browser message instead of loading.
 - **browser-extension/ParentalControlBrowserExtension** — Manifest V3 extension for
   Chromium-based browsers (Chrome, Edge, Opera, Comet) that polls the local rule API,
@@ -28,13 +26,6 @@ A .NET 10 solution for browser history monitoring, DNS topology logging, and bro
   same local rule API and blocks matching sites with a browser-visible page.
 - **ParentalControl.Viewer** — Windows Forms app to browse the visited-sites log: pick a date,
   optionally filter by Windows account and/or free text (URL/title), and view matches in a grid.
-
-### DNS topology logging limitations
-
-- This records configured DNS servers / resolver hints from the adapter configuration; it does
-  not capture raw packets or DNS query payloads.
-- If an adapter is using DHCP-provided DNS, the resolver may be reported as `dhcp-or-upstream`
-  until the OS exposes explicit servers in the adapter configuration.
 
 ## How blocking works
 
@@ -68,9 +59,8 @@ so it never disturbs other entries, and can be safely removed by deleting that b
 
 ## How logging works
 
-The service records only what it can observe passively in addition to blocking:
-- Browser history from each user profile under `C:\Users`.
-- Existing DNS configuration / upstream resolver hints from each active network adapter.
+The service records browser history from each user profile under `C:\Users` and does not change
+the machine's DNS settings.
 
 ## How visit logging works
 
@@ -91,10 +81,6 @@ Log format (tab-separated: time, Windows user, browser, URL, title), one file pe
 C:\temp\log-2026-08-24.txt
 2026-08-24 14:32:10 UTC	jsmith	Chrome	https://example.com/page	Example Page Title
 ```
-
-DNS topology snapshots are written separately to `C:\temp\dns-topology-2026-08-24.txt` and
-record the adapter description, resolver source, DHCP flag, DNS domain, and configured server
-list.
 
 ## Prerequisites
 
@@ -124,8 +110,8 @@ notepad C:\ProgramData\ParentalControl\block-list.txt
 ```
 Add one rule per line — a full domain (`example.com`) or a partial fragment (`casino`).
 
-The service writes browser history logs and DNS topology snapshots to `C:\temp`. Create the
-folder in advance if you want to verify permissions before starting the service:
+The service writes browser history logs to `C:\temp`. Create the folder in advance if you want
+to verify permissions before starting the service:
 
 ```powershell
 New-Item -ItemType Directory -Force -Path C:\temp | Out-Null
