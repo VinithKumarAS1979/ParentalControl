@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using ParentalControl.Common;
 using ParentalControl.Common.WebBlocking;
 
 namespace ParentalControl.Service;
@@ -12,8 +13,6 @@ namespace ParentalControl.Service;
 /// redirected through the hosts file.</summary>
 public sealed class BlockPageServer(BlockPageCertificateStore certificateStore)
 {
-    private const int HttpPort = 80;
-    private const int HttpsPort = 443;
     private readonly object _rulesLock = new();
     private IReadOnlyList<string> _rules = [];
 
@@ -34,7 +33,7 @@ public sealed class BlockPageServer(BlockPageCertificateStore certificateStore)
 
     private async Task RunHttpAsync(CancellationToken stoppingToken)
     {
-        var listener = new TcpListener(IPAddress.Loopback, HttpPort);
+        var listener = new TcpListener(IPAddress.Loopback, PathsConfig.BlockPageHttpPort);
         listener.Start();
 
         try
@@ -56,7 +55,7 @@ public sealed class BlockPageServer(BlockPageCertificateStore certificateStore)
 
     private async Task RunHttpsAsync(CancellationToken stoppingToken)
     {
-        var listener = new TcpListener(IPAddress.Loopback, HttpsPort);
+        var listener = new TcpListener(IPAddress.Loopback, PathsConfig.BlockPageHttpsPort);
         listener.Start();
 
         try

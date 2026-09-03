@@ -5,21 +5,20 @@ using ParentalControl.Common;
 
 namespace ParentalControl.Service;
 
-/// <summary>Serves the current block list on localhost so the browser extension can keep its
+
 /// redirect rules in sync without reading app-data files directly.</summary>
 public sealed class BlocklistApiServer(BlocklistManager blocklistManager)
 {
     private const int Port = 8787;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
     public async Task RunAsync(CancellationToken stoppingToken)
     {
         blocklistManager.EnsureBlockListExists();
 
         var listener = new HttpListener();
         listener.Prefixes.Add($"http://127.0.0.1:{Port}/");
-        listener.Start();
 
+        listener.Prefixes.Add($"http://127.0.0.1:{PathsConfig.BlocklistApiPort}/api/");
         try
         {
             while (!stoppingToken.IsCancellationRequested)

@@ -10,7 +10,8 @@ public class Worker(
     BlockPageServer blockPageServer,
     BlocklistApiServer blocklistApiServer) : BackgroundService
 {
-    private static readonly TimeSpan ScanInterval = TimeSpan.FromMinutes(1);
+    private static TimeSpan HistoryScanInterval => TimeSpan.FromMinutes(PathsConfig.BrowserRefreshIntervalMinutes);
+    private static TimeSpan BlocklistRefreshInterval => TimeSpan.FromMinutes(PathsConfig.BlocklistRefreshIntervalMinutes);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -38,7 +39,7 @@ public class Worker(
 
             try
             {
-                await Task.Delay(ScanInterval, stoppingToken);
+                await Task.Delay(HistoryScanInterval, stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -71,7 +72,7 @@ public class Worker(
 
             try
             {
-                await Task.Delay(ScanInterval, stoppingToken);
+                await Task.Delay(BlocklistRefreshInterval, stoppingToken);
             }
             catch (OperationCanceledException)
             {

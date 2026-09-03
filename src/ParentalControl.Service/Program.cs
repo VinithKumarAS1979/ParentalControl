@@ -1,7 +1,10 @@
 using ParentalControl.Common;
 using ParentalControl.Service;
+using Microsoft.Extensions.Configuration;
 
 var builder = Host.CreateApplicationBuilder(args);
+var parentalControlOptions = builder.Configuration.GetSection("ParentalControl").Get<ParentalControlOptions>() ?? new ParentalControlOptions();
+PathsConfig.Initialize(parentalControlOptions);
 builder.Services.AddWindowsService(options => options.ServiceName = "ParentalControlService");
 builder.Services.AddSingleton<BrowserHistoryReader>();
 builder.Services.AddSingleton<BlocklistManager>();
