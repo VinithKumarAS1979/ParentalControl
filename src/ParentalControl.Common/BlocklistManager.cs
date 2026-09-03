@@ -8,23 +8,48 @@ public sealed partial class BlocklistManager
 {
     private const string MarkerBegin = "# === ParentalControl BEGIN ===";
     private const string MarkerEnd = "# === ParentalControl END ===";
+    private static readonly string DefaultBlockListTemplatePath = Path.Combine(AppContext.BaseDirectory, "block-list.txt");
 
     private static string HostsFilePath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "drivers", "etc", "hosts");
+
+    public void EnsureBlockListExists()
+    {
+        PathsConfig.EnsureFoldersExist();
+
+        if (File.Exists(PathsConfig.BlockListFile))
+        {
+            return;
+        }
+
+        if (File.Exists(PathsConfig.LegacyBlocklistFile))
+        {
+            File.Copy(PathsConfig.LegacyBlocklistFile, PathsConfig.BlockListFile, overwrite: true);
+            return;
+        }
+
+        if (File.Exists(DefaultBlockListTemplatePath))
+        {
+            File.Copy(DefaultBlockListTemplatePath, PathsConfig.BlockListFile, overwrite: true);
+            return;
+        }
+
+        File.WriteAllText(PathsConfig.BlockListFile,
+            "# One rule per line: a full domain (example.com) or a partial fragment (casino)\n");
+    }
 
     /// <summary>Loads block rules from the blocklist file. Each line may be a full domain
     /// (example.com) or a partial fragment (gambling) matched against the visited URL.</summary>
     public IReadOnlyList<string> LoadRules()
     {
-        if (!File.Exists(PathsConfig.BlocklistFile))
-        {
-            PathsConfig.EnsureFoldersExist();
-            File.WriteAllText(PathsConfig.BlocklistFile,
-                "# One rule per line: a full domain (example.com) or a partial fragment (casino)\n");
-            return [];
-        }
+        EnsureBlockListExists();
 
-        return File.ReadAllLines(PathsConfig.BlocklistFile)
+        var ruleFiles = new[] { PathsConfig.BlockListFile, PathsConfig.LegacyBlocklistFile }
+            .Where(File.Exists)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        return ruleFiles
+            .SelectMany(File.ReadAllLines)
             .Select(l => l.Trim())
             .Where(l => l.Length > 0 && !l.StartsWith('#'))
             .Distinct(StringComparer.OrdinalIgnoreCase)

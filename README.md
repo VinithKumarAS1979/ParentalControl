@@ -20,6 +20,12 @@ A .NET 10 solution for browser history monitoring, DNS topology logging, and bro
     new visits (adds page titles) and appends them to `C:\temp\log-yyyy-MM-dd.txt`.
   3. **Website blocking** — applies blocklist domains to the Windows `hosts` file and serves a
     local block page over HTTP/HTTPS so blocked sites show a browser message instead of loading.
+- **browser-extension/ParentalControlBrowserExtension** — Manifest V3 extension for
+  Chromium-based browsers (Chrome, Edge, Opera, Comet) that polls the local rule API,
+  converts partial-fragment rules into browser redirects, and shows a native blocked page for
+  sites matched by the block list.
+- **browser-extension/ParentalControlFirefoxExtension** — Firefox WebExtension that polls the
+  same local rule API and blocks matching sites with a browser-visible page.
 - **ParentalControl.Viewer** — Windows Forms app to browse the visited-sites log: pick a date,
   optionally filter by Windows account and/or free text (URL/title), and view matches in a grid.
 
@@ -34,19 +40,23 @@ A .NET 10 solution for browser history monitoring, DNS topology logging, and bro
 
 Blocklist entries live in:
 ```
-C:\ProgramData\ParentalControl\blocklist.txt
+C:\ProgramData\ParentalControl\block-list.txt
 ```
 One rule per line, `#` for comments. A rule can be:
 - A **full domain**, e.g. `example.com` — the service writes it to the managed `hosts` file
   section so the domain resolves to `127.0.0.1`, where the local block page server answers with a
-  browser-visible "Website blocked" page.
+  browser-visible "Website blocked" page. The browser extension also enforces the same rule in
+  the browser itself, which helps when a browser is using DNS-over-HTTPS.
 - A **partial fragment**, e.g. `casino` — matches the service-side rule check, but cannot be
-  turned into a reliable browser redirect with `hosts` alone. Keep these for logging/alerting or
-  move them to a browser extension/proxy if you need fragment-based enforcement.
+  turned into a reliable browser redirect with `hosts` alone. These are enforced by the browser
+  extension, which polls the local rule API and redirects matching navigations to a blocked page.
 
 The block page uses a local CA certificate that the service installs into the machine trust store
 so HTTPS requests to blocked domains can be served with a real page instead of a certificate
 error.
+
+The browser extension reads the active rules from `http://127.0.0.1:8787/api/blocklist` and keeps
+its dynamic rules synchronized automatically every few minutes.
 
 The service only edits a clearly marked section of the hosts file:
 ```
@@ -103,14 +113,14 @@ dotnet build
 This restores NuGet packages and builds all three projects (`ParentalControl.Common`,
 `ParentalControl.Service`, `ParentalControl.Viewer`).
 
-## 2. Configure the blocklist and log locations (optional)
+## 2. Configure the block-list and log locations (optional)
 
-The service creates `C:\ProgramData\ParentalControl\blocklist.txt` automatically the first time
+The service creates `C:\ProgramData\ParentalControl\block-list.txt` automatically the first time
 it runs, but you can prepare it up front if you want rules in place immediately:
 
 ```powershell
 New-Item -ItemType Directory -Force -Path C:\ProgramData\ParentalControl | Out-Null
-notepad C:\ProgramData\ParentalControl\blocklist.txt
+notepad C:\ProgramData\ParentalControl\block-list.txt
 ```
 Add one rule per line — a full domain (`example.com`) or a partial fragment (`casino`).
 
@@ -172,3 +182,36 @@ If you'd rather run a standalone build instead of `dotnet run`:
 dotnet publish src/ParentalControl.Viewer -c Release -o publish/viewer
 .\publish\viewer\ParentalControl.Viewer.exe
 ```
+
+## 5. Install the browser extensions
+
+### Chromium-based browsers
+
+The Chromium extension lives in `browser-extension/ParentalControlBrowserExtension` and does not
+need a build step. Install it as an unpacked extension in Chrome, Edge, Opera, or Comet:
+
+1. Open `chrome://extensions` in Chrome, Opera, or Comet, or `edge://extensions` in Edge.
+2. Turn on Developer mode.
+3. Click Load unpacked.
+4. Select `browser-extension/ParentalControlBrowserExtension`.
+
+Once installed, the extension will fetch the active rules from the local service and apply the
+fragment-based browser blocking rules automatically. The service keeps the rules up to date and
+the extension refreshes them on startup and every few minutes.
+
+### Firefox
+
+The Firefox extension lives in `browser-extension/ParentalControlFirefoxExtension`.
+
+1. Open `about:debugging#/runtime/this-firefox`.
+2. Click Load Temporary Add-on.
+3. Select the `manifest.json` file inside `browser-extension/ParentalControlFirefoxExtension`.
+
+Firefox will load the add-on temporarily for the current session. If you want a signed, permanent
+install later, I can add a packaged distribution workflow next.
+
+### IE
+
+Internet Explorer does not support modern browser extensions, so there is no IE add-on for this
+project. The practical fallback is the service-side hosts/block-page behavior plus migrating users
+to Edge IE mode or another supported browser.

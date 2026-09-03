@@ -1,0 +1,8 @@
+# One rule per line: a full domain (example.com) or a partial fragment (casino)
+# Domains are redirected by the service hosts-file block page.
+# Partial fragments are enforced by the browser extension and block page.
+#
+# example.com
+# social
+# games
+# youtube

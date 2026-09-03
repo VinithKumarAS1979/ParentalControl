@@ -15,4 +15,10 @@
   <ItemGroup>
     <ProjectReference Include="..\ParentalControl.Common\ParentalControl.Common.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="block-list.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 </Project>

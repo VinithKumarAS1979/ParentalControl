@@ -9,6 +9,7 @@ builder.Services.AddSingleton<BlocklistManager>();
 builder.Services.AddSingleton<VisitLogWriter>();
 builder.Services.AddSingleton<NetworkDnsConfigurator>();
 builder.Services.AddSingleton<BlockPageServer>();
+builder.Services.AddSingleton<BlocklistApiServer>();
 builder.Services.AddHostedService<Worker>();
 
 var host = builder.Build();

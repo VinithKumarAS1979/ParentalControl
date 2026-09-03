@@ -1,0 +1,28 @@
+{
+  "manifest_version": 2,
+  "name": "ParentalControl Website Blocker",
+  "version": "1.0.0",
+  "description": "Blocks domains and URL fragments from the local ParentalControl block list and shows a browser block page.",
+  "applications": {
+    "gecko": {
+      "id": "parentalcontrol@local",
+      "strict_min_version": "120.0"
+    }
+  },
+  "permissions": [
+    "alarms",
+    "storage",
+    "webRequest",
+    "webRequestBlocking",
+    "http://127.0.0.1:8787/*",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": true
+  },
+  "browser_action": {
+    "default_title": "ParentalControl Blocker"
+  },
+  "web_accessible_resources": ["blocked.html", "blocked.js"]
+}

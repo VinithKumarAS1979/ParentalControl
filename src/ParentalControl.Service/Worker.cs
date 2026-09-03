@@ -9,7 +9,8 @@ public class Worker(
     BlocklistManager blocklistManager,
     VisitLogWriter logWriter,
     NetworkDnsConfigurator dnsConfigurator,
-    BlockPageServer blockPageServer) : BackgroundService
+    BlockPageServer blockPageServer,
+    BlocklistApiServer blocklistApiServer) : BackgroundService
 {
     private static readonly TimeSpan ScanInterval = TimeSpan.FromMinutes(1);
 
@@ -20,8 +21,9 @@ public class Worker(
         var historyTask = RunHistoryLoopAsync(state, stoppingToken);
         var dnsTopologyTask = RunDnsTopologyLoopAsync(stoppingToken);
         var blockPageTask = RunBlockPageLoopAsync(stoppingToken);
+        var blocklistApiTask = blocklistApiServer.RunAsync(stoppingToken);
 
-        await Task.WhenAll(historyTask, dnsTopologyTask, blockPageTask);
+        await Task.WhenAll(historyTask, dnsTopologyTask, blockPageTask, blocklistApiTask);
     }
 
     private async Task RunHistoryLoopAsync(ScanState state, CancellationToken stoppingToken)

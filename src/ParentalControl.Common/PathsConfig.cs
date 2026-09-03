@@ -13,7 +13,11 @@ public static class PathsConfig
     public static string AppDataFolder =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "ParentalControl");
 
-    public static string BlocklistFile => Path.Combine(AppDataFolder, "blocklist.txt");
+    /// <summary>Canonical block-list file used by the service and browser extension.</summary>
+    public static string BlockListFile => Path.Combine(AppDataFolder, "block-list.txt");
+
+    /// <summary>Legacy filename kept for compatibility with earlier builds.</summary>
+    public static string LegacyBlocklistFile => Path.Combine(AppDataFolder, "blocklist.txt");
 
     public static string StateFile => Path.Combine(AppDataFolder, "scan-state.json");
 
