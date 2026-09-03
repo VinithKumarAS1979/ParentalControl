@@ -6,8 +6,10 @@ namespace ParentalControl.Service;
 public class Worker(
     ILogger<Worker> logger,
     BrowserHistoryReader historyReader,
+    BlocklistManager blocklistManager,
     VisitLogWriter logWriter,
-    NetworkDnsConfigurator dnsConfigurator) : BackgroundService
+    NetworkDnsConfigurator dnsConfigurator,
+    BlockPageServer blockPageServer) : BackgroundService
 {
     private static readonly TimeSpan ScanInterval = TimeSpan.FromMinutes(1);
 
@@ -17,8 +19,9 @@ public class Worker(
         var state = ScanState.Load();
         var historyTask = RunHistoryLoopAsync(state, stoppingToken);
         var dnsTopologyTask = RunDnsTopologyLoopAsync(stoppingToken);
+        var blockPageTask = RunBlockPageLoopAsync(stoppingToken);
 
-        await Task.WhenAll(historyTask, dnsTopologyTask);
+        await Task.WhenAll(historyTask, dnsTopologyTask, blockPageTask);
     }
 
     private async Task RunHistoryLoopAsync(ScanState state, CancellationToken stoppingToken)
@@ -69,6 +72,41 @@ public class Worker(
                 break;
             }
         }
+    }
+
+    private async Task RunBlockPageLoopAsync(CancellationToken stoppingToken)
+    {
+        var blockPageRunTask = blockPageServer.RunAsync(stoppingToken);
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                var rules = blocklistManager.LoadRules();
+                blocklistManager.ApplyHostsFileBlocks(rules);
+                blockPageServer.UpdateRules(rules);
+                logger.LogInformation("Refreshed block page rules for {Count} blocked domains/fragments", rules.Count);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                logger.LogWarning(ex, "Unable to update hosts file - service must run elevated to block websites");
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error while refreshing block page rules");
+            }
+
+            try
+            {
+                await Task.Delay(ScanInterval, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+
+        await blockPageRunTask;
     }
 
     private void ScanAndLogVisitedSites(ScanState state)
