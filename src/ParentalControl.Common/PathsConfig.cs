@@ -27,6 +27,8 @@ public static class PathsConfig
     /// <summary>Legacy filename kept for compatibility with earlier builds.</summary>
     public static string LegacyBlocklistFile => _options.LegacyBlocklistFile;
 
+    public static string AppBlocklistFile => _options.AppBlocklistFile;
+
     public static string StateFile => _options.StateFile;
 
     public static int BlocklistApiPort => _options.BlocklistApiPort;

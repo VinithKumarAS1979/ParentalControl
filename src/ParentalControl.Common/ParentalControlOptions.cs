@@ -9,6 +9,7 @@ public sealed class ParentalControlOptions
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "ParentalControl");
     public string BlockListFile { get; set; } = string.Empty;
     public string LegacyBlocklistFile { get; set; } = string.Empty;
+    public string AppBlocklistFile { get; set; } = string.Empty;
     public string StateFile { get; set; } = string.Empty;
     public int BlocklistApiPort { get; set; } = 8787;
     public int BlockPageHttpPort { get; set; } = 80;
@@ -33,6 +34,11 @@ public sealed class ParentalControlOptions
         if (string.IsNullOrWhiteSpace(LegacyBlocklistFile))
         {
             LegacyBlocklistFile = Path.Combine(AppDataFolder, "blocklist.txt");
+        }
+
+        if (string.IsNullOrWhiteSpace(AppBlocklistFile))
+        {
+            AppBlocklistFile = Path.Combine(AppDataFolder, "app-blocklist.txt");
         }
 
         if (string.IsNullOrWhiteSpace(StateFile))
