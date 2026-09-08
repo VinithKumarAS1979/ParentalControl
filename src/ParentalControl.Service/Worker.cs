@@ -6,12 +6,14 @@ public class Worker(
     ILogger<Worker> logger,
     BrowserHistoryReader historyReader,
     BlocklistManager blocklistManager,
+    AppBlockManager appBlockManager,
     VisitLogWriter logWriter,
     BlockPageServer blockPageServer,
     BlocklistApiServer blocklistApiServer) : BackgroundService
 {
     private static TimeSpan HistoryScanInterval => TimeSpan.FromMinutes(PathsConfig.BrowserRefreshIntervalMinutes);
     private static TimeSpan BlocklistRefreshInterval => TimeSpan.FromMinutes(PathsConfig.BlocklistRefreshIntervalMinutes);
+    private static TimeSpan AppBlockInterval => TimeSpan.FromSeconds(PathsConfig.AppBlockRefreshIntervalSeconds);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -20,8 +22,9 @@ public class Worker(
         var historyTask = RunHistoryLoopAsync(state, stoppingToken);
         var blockPageTask = RunBlockPageLoopAsync(stoppingToken);
         var blocklistApiTask = blocklistApiServer.RunAsync(stoppingToken);
+        var appBlockTask = RunAppBlockLoopAsync(stoppingToken);
 
-        await Task.WhenAll(historyTask, blockPageTask, blocklistApiTask);
+        await Task.WhenAll(historyTask, blockPageTask, blocklistApiTask, appBlockTask);
     }
 
     private async Task RunHistoryLoopAsync(ScanState state, CancellationToken stoppingToken)
@@ -97,6 +100,45 @@ public class Worker(
             logger.LogInformation("Logged {Count} new visits from {User}'s {Browser}", newEntries.Count, windowsUser, browser);
         }
         state.Save();
+    }
+
+    private async Task RunAppBlockLoopAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                EnforceAppBlocklist();
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error during application-block cycle");
+            }
+
+            try
+            {
+                await Task.Delay(AppBlockInterval, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+    }
+
+    private void EnforceAppBlocklist()
+    {
+        var rules = appBlockManager.LoadRules();
+        if (rules.Count == 0) return;
+
+        var killed = appBlockManager.EnforceBlocklist(rules);
+        if (killed.Count == 0) return;
+
+        logWriter.AppendAppBlockEvents(killed);
+        foreach (var evt in killed)
+        {
+            logger.LogInformation("Blocked application {ProcessName} ({Path}) launched by {User}", evt.ProcessName, evt.Path, evt.WindowsUser);
+        }
     }
 }
 

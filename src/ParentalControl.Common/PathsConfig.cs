@@ -45,6 +45,8 @@ public static class PathsConfig
 
     public static int BlocklistApiRefreshIntervalMinutes => _options.BlocklistApiRefreshIntervalMinutes;
 
+    public static int AppBlockRefreshIntervalSeconds => _options.AppBlockRefreshIntervalSeconds;
+
     public static string LogFileForDate(DateTime date) =>
         Path.Combine(LogFolder, $"log-{date:yyyy-MM-dd}.txt");
 

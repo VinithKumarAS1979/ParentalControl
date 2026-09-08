@@ -9,6 +9,7 @@ PathsConfig.Initialize(parentalControlOptions);
 builder.Services.AddWindowsService(options => options.ServiceName = "ParentalControlService");
 builder.Services.AddSingleton<BrowserHistoryReader>();
 builder.Services.AddSingleton<BlocklistManager>();
+builder.Services.AddSingleton<AppBlockManager>();
 builder.Services.AddSingleton<VisitLogWriter>();
 builder.Services.AddSingleton<BlockPageCertificateStore>();
 builder.Services.AddSingleton<BlockPageServer>();

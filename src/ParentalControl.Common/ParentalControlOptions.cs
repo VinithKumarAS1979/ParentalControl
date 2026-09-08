@@ -18,6 +18,7 @@ public sealed class ParentalControlOptions
     public int BlocklistRefreshIntervalMinutes { get; set; } = 1;
     public int DnsTopologyRefreshIntervalMinutes { get; set; } = 1;
     public int BlocklistApiRefreshIntervalMinutes { get; set; } = 1;
+    public int AppBlockRefreshIntervalSeconds { get; set; } = 3;
 
     public void Normalize()
     {
