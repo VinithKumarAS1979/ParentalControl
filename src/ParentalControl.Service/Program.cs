@@ -1,4 +1,5 @@
 using ParentalControl.Common;
+using ParentalControl.Common.WebBlocking;
 using ParentalControl.Service;
 using Microsoft.Extensions.Configuration;
 
@@ -9,6 +10,7 @@ builder.Services.AddWindowsService(options => options.ServiceName = "ParentalCon
 builder.Services.AddSingleton<BrowserHistoryReader>();
 builder.Services.AddSingleton<BlocklistManager>();
 builder.Services.AddSingleton<VisitLogWriter>();
+builder.Services.AddSingleton<BlockPageCertificateStore>();
 builder.Services.AddSingleton<BlockPageServer>();
 builder.Services.AddSingleton<BlocklistApiServer>();
 builder.Services.AddHostedService<Worker>();

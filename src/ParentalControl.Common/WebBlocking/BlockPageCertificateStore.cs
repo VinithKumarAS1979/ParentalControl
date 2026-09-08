@@ -80,8 +80,8 @@ public sealed class BlockPageCertificateStore
         rootRequest.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
         rootRequest.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(rootRequest.PublicKey, false));
 
-        var rootCertificate = rootRequest.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(5));
-        var rootWithKey = rootCertificate.CopyWithPrivateKey(rootKey);
+        // CreateSelfSigned already returns a certificate with rootKey attached as its private key.
+        var rootWithKey = rootRequest.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(5));
 
         password = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
         File.WriteAllText(passwordPath, password);
