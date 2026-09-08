@@ -3,6 +3,7 @@ using System.Net.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Runtime.Versioning;
+using Microsoft.Extensions.Logging;
 
 namespace ParentalControl.Common.WebBlocking;
 
@@ -14,11 +15,13 @@ public sealed class BlockPageCertificateStore
     private const string RootSubject = "CN=ParentalControl Block Page Root";
     private readonly object _sync = new();
     private readonly Dictionary<string, X509Certificate2> _leafCertificates = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ILogger<BlockPageCertificateStore> _logger;
 
     private readonly X509Certificate2 _rootCertificate;
 
-    public BlockPageCertificateStore()
+    public BlockPageCertificateStore(ILogger<BlockPageCertificateStore> logger)
     {
+        _logger = logger;
         PathsConfig.EnsureFoldersExist();
         _rootCertificate = LoadOrCreateRootCertificate();
     }
@@ -49,7 +52,7 @@ public sealed class BlockPageCertificateStore
         return hostName.Trim().Trim('.');
     }
 
-    private static X509Certificate2 LoadOrCreateRootCertificate()
+    private X509Certificate2 LoadOrCreateRootCertificate()
     {
         var certDir = Path.Combine(PathsConfig.AppDataFolder, "certs");
         Directory.CreateDirectory(certDir);
@@ -93,13 +96,25 @@ public sealed class BlockPageCertificateStore
             X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet);
     }
 
-    private static void EnsureTrustedInRootStore(X509Certificate2 certificate)
+    // Trusting the root CA needs admin rights; without it the block page still serves, just with a browser cert warning.
+    private void EnsureTrustedInRootStore(X509Certificate2 certificate)
     {
-        using var store = new X509Store(StoreName.Root, StoreLocation.LocalMachine);
-        store.Open(OpenFlags.ReadWrite);
-        if (!store.Certificates.Cast<X509Certificate2>().Any(existing => existing.Thumbprint == certificate.Thumbprint))
+        try
         {
-            store.Add(certificate);
+            using var store = new X509Store(StoreName.Root, StoreLocation.LocalMachine);
+            store.Open(OpenFlags.ReadWrite);
+            if (!store.Certificates.Cast<X509Certificate2>().Any(existing => existing.Thumbprint == certificate.Thumbprint))
+            {
+                store.Add(certificate);
+            }
+        }
+        catch (CryptographicException ex)
+        {
+            _logger.LogWarning(ex, "Unable to add the block-page root certificate to the trusted root store - service must run with administrator privileges. HTTPS block pages will show a certificate warning until this is resolved.");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning(ex, "Unable to add the block-page root certificate to the trusted root store - service must run with administrator privileges. HTTPS block pages will show a certificate warning until this is resolved.");
         }
     }
 
